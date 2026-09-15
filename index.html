@@ -127,7 +127,10 @@ function fmtDate(v){
 // Substituições de texto (troca exata da célula, sem diferenciar maiúsc/minúsc nem acentos)
 const REPLACEMENTS=[
   ['ESF VERA CRUZ UBS','UBS ESF JD LUIZA'],
-  ['NUCLEO DE SAUDE DA FAMILIA ESMERALDA','NUCLEO SAUDE FAMILIA ESMERALDA']
+  ['NUCLEO DE SAUDE DA FAMILIA ESMERALDA','NUCLEO SAUDE FAMILIA ESMERALDA'],
+  ['UBS GUANABARA CS II','UBS GUANABARA'],
+  ['UBS GUANABARA CD II','UBS GUANABARA'],
+  ['NGA FRANCA','NGA-16']
 ];
 function foldTxt(s){ return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase().replace(/\s+/g,' '); }
 function applyReplacements(s){
