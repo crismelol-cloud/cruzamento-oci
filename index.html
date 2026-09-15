@@ -39,7 +39,8 @@ table{border-collapse:collapse;width:100%;font-size:.82rem;white-space:nowrap;}
 th{position:sticky;top:0;background:var(--navy);color:#fff;text-align:left;padding:9px 12px;font-weight:600;z-index:2;}
 td{padding:8px 12px;border-bottom:1px solid #eef1f5;}
 tr:hover td{background:#f6f9fc;} tr.hit td.matcol{background:var(--yellow);font-weight:700;}
-td.cidflag{background:#FFEB3B;color:#c0392b;font-weight:700;} tr:hover td.cidflag{background:#ffe12e;}
+td.cidgreen{background:#C6EFCE;color:#006100;font-weight:700;} tr:hover td.cidgreen{background:#b3e6bd;}
+td.cidyellow{background:#FFEB9C;color:#9C6500;font-weight:700;} tr:hover td.cidyellow{background:#ffe27d;}
 .pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:.72rem;font-weight:600;} .pill.y{background:#d5f2e2;color:var(--green);}.pill.n{background:#fadbd8;color:var(--red);}
 .mono{font-variant-numeric:tabular-nums;font-family:'SF Mono',Consolas,monospace;}
 .esp-row{display:grid;grid-template-columns:200px 1fr 66px;gap:12px;align-items:center;padding:7px 0;border-bottom:1px solid #f0f3f7;font-size:.84rem;}
@@ -123,52 +124,40 @@ function fmtDate(v){
   let mm=s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(mm)return mm[3]+'/'+mm[2]+'/'+mm[1];
   return s;
 }
+// Substituições de texto (troca exata da célula, sem diferenciar maiúsc/minúsc nem acentos)
+const REPLACEMENTS=[
+  ['ESF VERA CRUZ UBS','UBS ESF JD LUIZA'],
+  ['NUCLEO DE SAUDE DA FAMILIA ESMERALDA','NUCLEO SAUDE FAMILIA ESMERALDA']
+];
+function foldTxt(s){ return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase().replace(/\s+/g,' '); }
+function applyReplacements(s){
+  const u=foldTxt(s);
+  for(const [a,b] of REPLACEMENTS){ if(u===foldTxt(a))return b; }
+  return s;
+}
 function cellVal(v,col){
   if(DATE_COLS.has(col))return fmtDate(v);
-  return v==null?'':String(v).trim();
+  return applyReplacements(v==null?'':String(v).trim());
 }
 // Regra CIDs por especialidade
 const CID_CARDIO=new Set(['Z13.6','Z84.8']);
 const CID_ORTO=new Set('M12.4 M15 M15.0 M15.3 M15.4 M15.8 M15.9 M16 M16.0 M16.1 M16.2 M16.3 M16.4 M16.5 M16.6 M16.7 M16.9 M17 M17.0 M17.1 M17.2 M17.3 M17.4 M17.5 M17.9 M18 M18.0 M18.1 M18.2 M18.3 M18.4 M18.5 M18.9 M19 M19.0 M19.1 M19.2 M19.8 M19.9 M25.0 M91 M91.0 M91.1 M91.2 M91.3 M91.8 M91.9 M92 M92.0 M92.1 M92.2 M92.3 M92.4 M92.5 M92.6 M92.7 M92.8 M92.9 M93 M93.0 M93.1 M93.2 M93.8 M93.9 M94 M94.0 M94.1 M94.2 M94.3 M94.8 M94.9 M95 M96.0 Q65 Q65.0 Q65.1 Q65.2 Q65.3 Q65.4 Q65.5 Q65.6 Q65.8 Q65.9 Q66 Q66.0 Q66.1 Q66.2 Q66.3 Q66.4 Q66.5 Q66.6'.split(' '));
 const ORTO_ESP=new Set(['ORTOPEDIA OU T','ORTOPEDIA']);
-function parseCid(code){
-  const m=String(code||'').trim().toUpperCase().match(/^([A-Z]+)\s*([0-9]+(?:\.[0-9]+)?)?/);
-  if(!m)return null;
-  return {letter:m[1], num:m[2]!==undefined?parseFloat(m[2]):NaN};
-}
-const ORTO_ARR=[...CID_ORTO].map(code=>{const p=parseCid(code);return {code, letter:p.letter, num:p.num};});
-function closestOrtoCid(ref){
-  const refU=String(ref||'').trim().toUpperCase();
-  if(CID_ORTO.has(refU))return refU;   // primeiro código já é permitido → mantém exato
-  const p=parseCid(ref); if(!p)return null;
-  let pool=ORTO_ARR.filter(a=>a.letter===p.letter);
-  if(!pool.length)return null;          // letra sem correspondente na lista → VER*
-  if(isNaN(p.num))return pool[0].code;
-  let best=null,bd=Infinity;
-  for(const a of pool){
-    const d=Math.round(Math.abs(a.num-p.num)*100)/100;
-    if(d<bd || (d===bd && best && (a.code.length<best.code.length || (a.code.length===best.code.length && a.code<best.code)))){ bd=d; best=a; }
-  }
-  return best?best.code:null;
-}
-// retorna {value, changed}
+// retorna {value, status}: status 'green' (permitido), 'yellow' (VER*), ou null (sem regra de cor)
 function applyCidRule(esp, cid, hit){
-  if(!hit)return {value:cid, changed:false};
+  if(!hit)return {value:cid, status:null};
   const E=String(esp||'').trim().toUpperCase();
   if(E==='CARDIOLOGIA'){
-    const orig=String(cid||'').trim(); const c=orig.toUpperCase();
-    if(c==='Z13.6')return {value:'Z13.6', changed:orig!=='Z13.6'};
-    if(c==='Z84.8')return {value:'Z84.8', changed:orig!=='Z84.8'};
-    return {value:'Z13.6', changed:true};
+    const c=String(cid||'').trim().toUpperCase();
+    if(c==='Z13.6'||c==='Z84.8')return {value:c, status:null};
+    return {value:'Z13.6', status:null};
   }
   if(ORTO_ESP.has(E)){
     const parts=String(cid||'').split(/[,;/]/).map(s=>s.trim().toUpperCase()).filter(Boolean);
-    if(parts.length===0)return {value:'VER*', changed:true};
-    if(parts.every(p=>CID_ORTO.has(p)))return {value:cid, changed:false};
-    const rep=closestOrtoCid(parts[0]);
-    return {value: rep||'VER*', changed:true};
+    if(parts.length>0 && parts.every(p=>CID_ORTO.has(p)))return {value:cid, status:'green'};
+    return {value:'VER*', status:'yellow'};
   }
-  return {value:cid, changed:false};
+  return {value:cid, status:null};
 }
 function readFile(file,cb){
   const rd=new FileReader();
@@ -226,8 +215,7 @@ function analisar(){
     if(hit){ const sr=sigs.get(n); SIGS_COLS.forEach(c=>{ const ci=sgMap[c]; rec.sigs[c]=ci>=0?cellVal(sr[ci],c):''; }); }
     else SIGS_COLS.forEach(c=>rec.sigs[c]='');
     const _cid=applyCidRule(rec.esp, rec.sigs['CIDs'], hit);
-    rec.sigs['CIDs']=_cid.value; rec.cidChanged=_cid.changed;
-    rec.cidFlag=_cid.changed && ORTO_ESP.has(String(rec.esp||'').trim().toUpperCase());
+    rec.sigs['CIDs']=_cid.value; rec.cidStatus=_cid.status;
     out.push(rec);
   }
   RESULT={out,match,total:out.length,shHead:shH};
@@ -266,7 +254,8 @@ function renderTable(){
     let tds='<td>'+(r.hit?'<span class="pill y">SIM</span>':'<span class="pill n">NÃO</span>')+'</td>';
     MODEL.forEach(m=>{
       let cls=(m[1]==='split'&&r.hit)?'matcol':'';
-      if(m[0]==='CIDs'&&r.cidFlag)cls='cidflag';
+      if(m[0]==='CIDs'&&r.cidStatus==='green')cls='cidgreen';
+      else if(m[0]==='CIDs'&&r.cidStatus==='yellow')cls='cidyellow';
       tds+=`<td${cls?` class="${cls}"`:''}>${esc(valFor(r,m[1],m[2],m[0]))||'—'}</td>`;
     });
     return `<tr class="${r.hit?'hit':''}">${tds}</tr>`;
@@ -291,14 +280,17 @@ function baixar(){
   const range=XLSX.utils.decode_range(ws['!ref']);
   const hdr={font:{name:'Calibri',sz:11}};
   const base={font:{name:'Calibri',sz:11}};
-  const cidFlag={fill:{fgColor:{rgb:'FFEB3B'}},font:{name:'Calibri',sz:11,bold:true,color:{rgb:'C0392B'}}};
+  const cidGreen={fill:{fgColor:{rgb:'C6EFCE'}},font:{name:'Calibri',sz:11,bold:true,color:{rgb:'006100'}}};
+  const cidYellow={fill:{fgColor:{rgb:'FFEB9C'}},font:{name:'Calibri',sz:11,bold:true,color:{rgb:'9C6500'}}};
   const cidIdx=header.indexOf('CIDs');
   for(let c=0;c<=range.e.c;c++){const a=XLSX.utils.encode_cell({r:0,c});if(ws[a])ws[a].s=hdr;}
   for(let ri=1;ri<=matched.length;ri++){
     for(let c=0;c<=range.e.c;c++){
       const a=XLSX.utils.encode_cell({r:ri,c}); if(!ws[a])continue;
       if(TEXT_COLS.has(header[c])){ ws[a].t='s'; ws[a].z='@'; ws[a].v=ws[a].v==null?'':String(ws[a].v); }
-      ws[a].s = (c===cidIdx && matched[ri-1].cidFlag) ? cidFlag : base;
+      let st=base;
+      if(c===cidIdx){ const s=matched[ri-1].cidStatus; if(s==='green')st=cidGreen; else if(s==='yellow')st=cidYellow; }
+      ws[a].s=st;
     }
   }
   ws['!cols']=header.map((h,i)=>({wch: i===0?13.3 : i===1?10.7 : 13}));
